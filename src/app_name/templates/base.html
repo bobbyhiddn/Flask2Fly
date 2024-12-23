@@ -10,9 +10,9 @@
 <body>
     <nav class="main-nav">
         <div class="nav-content">
-            <div class="nav-brand">
-                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="{{ site_name }} logo">
-                <a href="{{ url_for('index') }}">Flask2Fly</a>
+            <div class="navbar-brand d-flex align-items-center">
+                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="{{ site_name }} logo" class="nav-logo">
+                <a href="{{ url_for('index') }}">{{ site_name }}</a>
             </div>
             <div class="nav-links">
                 {% block nav %}{% endblock %}

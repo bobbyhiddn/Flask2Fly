@@ -23,7 +23,10 @@ class AppCore:
         """Configure application routes"""
         @self.app.context_processor
         def inject_now():
-            return {'now': datetime.datetime.now()}
+            return {
+                'now': datetime.datetime.now(),
+                'site_name': 'Flask2Fly'
+            }
 
         @self.app.route('/')
         def index():

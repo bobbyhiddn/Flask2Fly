@@ -3,8 +3,39 @@
 {% block title %}Home{% endblock %}
 
 {% block content %}
-<div class="container">
-    <h1>Welcome to Flask2Fly</h1>
-    <p>A modern Flask framework for deploying to Fly.io</p>
+<div class="hero">
+    <div class="hero-content">
+        <h1>Welcome to Flask2Fly</h1>
+        <p class="hero-subtitle">A modern Flask framework for seamless deployment to Fly.io</p>
+        <div class="hero-buttons">
+            <a href="https://github.com/yourusername/Flask2Fly" class="btn btn-primary">Get Started</a>
+            <a href="https://docs.fly.io" class="btn btn-secondary">Learn More</a>
+        </div>
+    </div>
+</div>
+
+<div class="features">
+    <div class="feature-grid">
+        <div class="feature-card">
+            <div class="feature-icon">🚀</div>
+            <h3>Quick Deploy</h3>
+            <p>Deploy your Flask app to Fly.io in minutes with our streamlined setup</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">⚡</div>
+            <h3>Modern Stack</h3>
+            <p>Built with the latest Flask best practices and modern development tools</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🛠️</div>
+            <h3>Developer Friendly</h3>
+            <p>Includes everything you need to build and deploy production-ready apps</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🔒</div>
+            <h3>Secure by Default</h3>
+            <p>Security best practices built-in from the ground up</p>
+        </div>
+    </div>
 </div>
 {% endblock %}
