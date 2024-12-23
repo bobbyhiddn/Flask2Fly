@@ -27,5 +27,5 @@ EXPOSE 8000
 # Make sure we're in the src directory for gunicorn
 WORKDIR /app/src
 
-# Run the Gunicorn server from the src directory
-CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:8000", "main:app"]
+# Run the Gunicorn server from the src directory with static file handling
+CMD ["gunicorn", "--workers=4", "--bind=0.0.0.0:8000", "--log-level=debug", "--access-logfile=-", "--error-logfile=-", "main:app"]
