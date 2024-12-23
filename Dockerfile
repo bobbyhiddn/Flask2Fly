@@ -15,8 +15,11 @@ COPY src/requirements.txt .
 # Install the required dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the application code including the .git directory for submodules
-COPY . .
+# Copy the application code
+COPY src /app/src/
+
+# Specifically ensure static files are copied
+COPY src/app_name/static /app/src/app_name/static/
 
 # Expose the port the app will run on
 EXPOSE 8000
