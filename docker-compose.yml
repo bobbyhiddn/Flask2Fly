@@ -8,6 +8,8 @@ services:
       - FLASK_ENV=development
     volumes:
       - ./src:/app/src
+      - ./src/templates:/app/src/templates
+      - ./src/static:/app/src/static
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]
       interval: 30s

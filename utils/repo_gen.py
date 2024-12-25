@@ -4,9 +4,13 @@ import shutil
 import subprocess
 import re
 from pathlib import Path
-from typing import Optional
 import venv
 import stat
+import requests
+from openai import OpenAI
+import json
+import logging
+from typing import Optional
 
 # Configuration
 TEMPLATE_REPO = "https://github.com/bobbyhiddn/Flask2Fly.git"
@@ -61,103 +65,160 @@ def rename_project_files(project_path: Path, project_name: str) -> None:
         shutil.rmtree(new_app_dir)
     app_dir.rename(new_app_dir)
 
-def update_configuration_files(project_path: Path, project_name: str) -> None:
-    # Update fly.toml
-    fly_toml = project_path / "fly.toml"
-    if fly_toml.exists():
+def update_python_files(project_path: Path, project_name: str) -> None:
+    """Update Python imports and references."""
+    # Update main.py specifically
+    main_py = project_path / "src" / "main.py"
+    if main_py.exists():
         try:
-            with open(fly_toml, 'r', encoding='utf-8') as f:
-                content = f.read()
-            content = re.sub(r'^app = .*$', f"app = '{project_name}'", content, flags=re.MULTILINE)
-            with open(fly_toml, 'w', encoding='utf-8') as f:
-                f.write(content)
+            content = main_py.read_text(encoding='utf-8')
+            content = content.replace("from app_name.core", f"from {project_name}.core")
+            main_py.write_text(content, encoding='utf-8')
         except UnicodeDecodeError:
-            print_status(f"Warning: Could not update {fly_toml} due to encoding issues")
+            print_status(f"Warning: Could not update {main_py} due to encoding issues")
 
-    # Update docker-compose.yml
-    docker_compose = project_path / "docker-compose.yml"
-    if docker_compose.exists():
+    # Update all Python files recursively
+    for py_file in project_path.rglob("*.py"):
         try:
-            with open(docker_compose, 'r', encoding='utf-8') as f:
-                content = f.read()
-            content = re.sub(r'^  [a-zA-Z0-9_-]*:', f"  {project_name}:", content, flags=re.MULTILINE)
-            with open(docker_compose, 'w', encoding='utf-8') as f:
-                f.write(content)
+            content = py_file.read_text(encoding='utf-8')
+            content = re.sub(r'from app_name\.', f'from {project_name}.', content)
+            content = re.sub(r'import app_name\.', f'import {project_name}.', content)
+            content = content.replace("app_name", project_name)
+            py_file.write_text(content, encoding='utf-8')
         except UnicodeDecodeError:
-            print_status(f"Warning: Could not update {docker_compose} due to encoding issues")
+            print_status(f"Warning: Could not update {py_file} due to encoding issues")
 
-    # Update workflow files
-    workflows_dir = project_path / ".github" / "workflows"
-    if workflows_dir.exists():
-        for workflow in workflows_dir.glob("*.yml"):
-            try:
-                with open(workflow, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                content = content.replace(
-                    "flyctl deploy --remote-only",
-                    f"flyctl deploy --remote-only --app {project_name}"
-                )
-                content = content.replace(
-                    "flyctl secrets set",
-                    f"flyctl secrets set --app {project_name} "
-                )
-                if "branches: [main]" not in content:
-                    content = content.replace(
-                        f"--app {project_name}",
-                        f"--app dev-{project_name}"
-                    )
-                with open(workflow, 'w', encoding='utf-8') as f:
-                    f.write(content)
-            except UnicodeDecodeError:
-                print_status(f"Warning: Could not update {workflow} due to encoding issues")
+def generate_theme(project_name: str, project_description: str) -> tuple[dict, bytes]:
+    """Generate a theme and logo using OpenAI APIs."""
+    api_key = os.getenv('OPENAI_API_KEY')
+    if not api_key:
+        print_error("OPENAI_API_KEY environment variable is required for theme generation")
 
-    # Update README.md
-    readme = project_path / "README.md"
-    if readme.exists():
+    client = OpenAI(api_key=api_key)
+
+    try:
+        # Generate color scheme
+        color_response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[{
+                "role": "user",
+                "content": f'Create a modern color scheme for a web application named "{project_name}". Description: {project_description}. Return ONLY a JSON object with these colors in hex format: primary-color, secondary-color, background-color, text-color, text-primary'
+            }],
+            temperature=0.7
+        )
+        
+        raw_content = color_response.choices[0].message.content
+        logging.debug(f"Raw API response: {raw_content}")
+        
         try:
-            with open(readme, 'r', encoding='utf-8') as f:
-                content = f.read()
-            content = content.replace("Flask2Fly", project_name)
-            with open(readme, 'w', encoding='utf-8') as f:
-                f.write(content)
-        except UnicodeDecodeError:
-            print_status(f"Warning: Could not update {readme} due to encoding issues")
+            clean_content = raw_content.strip()
+            if clean_content.startswith("```"):
+                clean_content = clean_content.split("\n", 1)[1]
+                clean_content = clean_content.rsplit("\n", 1)[0]
+            
+            colors = json.loads(clean_content)
+        except json.JSONDecodeError as e:
+            logging.error(f"JSON parsing error: {e}")
+            logging.error(f"Failed to parse response: {raw_content}")
+            logging.error(f"Cleaned content: {clean_content}")
+            raise Exception("Failed to parse theme colors from API response")
+        
+        # Generate logo
+        image_response = client.images.generate(
+            model="dall-e-3",
+            prompt=f'Create a modern logo for "{project_name}". Description: {project_description}. Style: 2D, clean, professional. Use {colors["primary-color"]} as the main color. Make it suitable as a website logo. 2D, stylized image.',
+            size="1024x1024",
+            n=1,
+            response_format="url"
+        )
+        
+        logo_url = image_response.data[0].url
+        logo_response = requests.get(logo_url)
+        if logo_response.status_code != 200:
+            raise Exception("Failed to download generated logo")
 
-    # Update Dockerfile
-    dockerfile = project_path / "Dockerfile"
-    if dockerfile.exists():
-        try:
-            with open(dockerfile, 'r', encoding='utf-8') as f:
-                content = f.read()
-            content = content.replace(
-                "src/app_name/static",
-                f"src/{project_name}/static"
+        return colors, logo_response.content
+    except Exception as e:
+        logging.error(f"Failed to generate theme: {str(e)}")
+        raise
+
+def update_theme_files(project_path: Path, colors: dict, logo_content: bytes) -> None:
+    """Update theme files with generated content."""
+    # Save the logo
+    static_img_path = project_path / "src" / project_path.name / "static" / "img"
+    static_img_path.mkdir(parents=True, exist_ok=True)
+    (static_img_path / "logo.png").write_bytes(logo_content)
+
+    # Update CSS with new colors
+    css_path = project_path / "src" / project_path.name / "static" / "css" / "styles.css"
+    if css_path.exists():
+        css_content = css_path.read_text(encoding='utf-8')
+        for var_name, color in colors.items():
+            css_content = re.sub(
+                f'--{var_name}: #[0-9a-fA-F]{{6}};',
+                f'--{var_name}: {color};',
+                css_content
             )
-            with open(dockerfile, 'w', encoding='utf-8') as f:
-                f.write(content)
-        except UnicodeDecodeError:
-            print_status(f"Warning: Could not update {dockerfile} due to encoding issues")
+        css_path.write_text(css_content, encoding='utf-8')
+
+def update_configuration_files(project_path: Path, project_name: str) -> None:
+    """Update various configuration files with the project name."""
+    files_to_update = {
+        "fly.toml": (lambda c: re.sub(r'^app = .*$', f"app = '{project_name}'", c, flags=re.MULTILINE)),
+        "docker-compose.yml": (lambda c: re.sub(r'^  [a-zA-Z0-9_-]*:', f"  {project_name}:", c, flags=re.MULTILINE)),
+        "Dockerfile": (lambda c: c.replace("src/app_name/static", f"src/{project_name}/static")),
+        "README.md": (lambda c: c.replace("Flask2Fly", project_name))
+    }
+
+    # Update base configuration files
+    for filename, update_func in files_to_update.items():
+        file_path = project_path / filename
+        if file_path.exists():
+            try:
+                content = file_path.read_text(encoding='utf-8')
+                updated_content = update_func(content)
+                # Additional replacements for any remaining Flask2Fly references
+                updated_content = updated_content.replace("Flask2Fly", project_name)
+                updated_content = updated_content.replace("flask2fly", project_name.lower())
+                updated_content = updated_content.replace("FLASK2FLY", project_name.upper())
+                file_path.write_text(updated_content, encoding='utf-8')
+            except UnicodeDecodeError:
+                print_status(f"Warning: Could not update {filename} due to encoding issues")
 
     # Update templates
     template_dir = project_path / "src" / project_name / "templates"
     if template_dir.exists():
-        for template in template_dir.glob("*.html"):
+        for template in template_dir.glob("**/*.html"):  # Use ** to search subdirectories
             try:
-                with open(template, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                content = content.replace("Flask2Fly", project_name)
-                content = content.replace("flask2fly logo", f"{project_name} logo")
-                if template.name == "index.html":
-                    content = content.replace(
-                        "Welcome to Flask2Fly",
-                        f"Welcome to {project_name}"
-                    )
-                    content = content.replace(
-                        "https://github.com/bobbyhiddn/Flask2Fly",
-                        f"https://github.com/yourusername/{project_name}"
-                    )
-                with open(template, 'w', encoding='utf-8') as f:
-                    f.write(content)
+                content = template.read_text(encoding='utf-8')
+                
+                # Replace all variants of the project name
+                replacements = {
+                    "Flask2Fly": project_name,
+                    "flask2fly": project_name.lower(),
+                    "FLASK2FLY": project_name.upper(),
+                    "flask2fly logo": f"{project_name.lower()} logo",
+                    "Flask2Fly Logo": f"{project_name} Logo",
+                    "Welcome to Flask2Fly": f"Welcome to {project_name}",
+                    "https://github.com/bobbyhiddn/Flask2Fly": f"https://github.com/yourusername/{project_name}",
+                }
+                
+                for old, new in replacements.items():
+                    content = content.replace(old, new)
+                
+                # Update meta tags and titles
+                content = re.sub(
+                    r'<meta\s+name="description"\s+content="[^"]*"',
+                    f'<meta name="description" content="{project_name} - A modern Flask application"',
+                    content
+                )
+                content = re.sub(
+                    r'<title>[^<]*</title>',
+                    f'<title>{project_name}</title>',
+                    content
+                )
+                
+                template.write_text(content, encoding='utf-8')
             except UnicodeDecodeError:
                 print_status(f"Warning: Could not update {template} due to encoding issues")
 
@@ -165,55 +226,86 @@ def update_configuration_files(project_path: Path, project_name: str) -> None:
     core_file = project_path / "src" / project_name / "core.py"
     if core_file.exists():
         try:
-            with open(core_file, 'r', encoding='utf-8') as f:
-                content = f.read()
-            content = content.replace(
-                "'site_name': 'Flask2Fly'",
-                f"'site_name': '{project_name}'"
-            )
-            content = content.replace(
-                'title="Welcome to Flask2Fly"',
-                f'title="Welcome to {project_name}"'
-            )
-            content = content.replace(
-                "- Flask2Fly",
-                f"- {project_name}"
-            )
-            with open(core_file, 'w', encoding='utf-8') as f:
-                f.write(content)
+            content = core_file.read_text(encoding='utf-8')
+            replacements = {
+                "'site_name': 'Flask2Fly'": f"'site_name': '{project_name}'",
+                'title="Welcome to Flask2Fly"': f'title="Welcome to {project_name}"',
+                "- Flask2Fly": f"- {project_name}",
+                "Flask2Fly": project_name,
+                "flask2fly": project_name.lower(),
+            }
+            for old, new in replacements.items():
+                content = content.replace(old, new)
+            core_file.write_text(content, encoding='utf-8')
         except UnicodeDecodeError:
             print_status(f"Warning: Could not update {core_file} due to encoding issues")
+
+    # Update workflow files
+    workflows_dir = project_path / ".github" / "workflows"
+    if workflows_dir.exists():
+        for workflow in workflows_dir.glob("*.yml"):
+            try:
+                content = workflow.read_text(encoding='utf-8')
+                replacements = {
+                    "flyctl deploy --remote-only": f"flyctl deploy --remote-only --app {project_name}",
+                    "flyctl secrets set": f"flyctl secrets set --app {project_name}",
+                }
+                for old, new in replacements.items():
+                    content = content.replace(old, new)
+                
+                # Handle dev branch naming
+                if "branches: [main]" not in content:
+                    content = content.replace(
+                        f"--app {project_name}",
+                        f"--app dev-{project_name}"
+                    )
+                workflow.write_text(content, encoding='utf-8')
+            except UnicodeDecodeError:
+                print_status(f"Warning: Could not update {workflow} due to encoding issues")
 
     # Update fly_deploy.sh
     deploy_script = project_path / "utils" / "fly_deploy.sh"
     if deploy_script.exists():
         try:
-            with open(deploy_script, 'r', encoding='utf-8') as f:
-                content = f.read()
-            content = content.replace(
-                'grep -q "Flask2Fly"',
-                f'grep -q "{project_name}"'
-            )
-            content = content.replace(
-                'APP_URL="flask2fly.fly.dev"',
-                f'APP_URL="{project_name}.fly.dev"'
-            )
-            content = content.replace("Flask2Fly", project_name)
-            with open(deploy_script, 'w', encoding='utf-8') as f:
-                f.write(content)
+            content = deploy_script.read_text(encoding='utf-8')
+            replacements = {
+                'grep -q "Flask2Fly"': f'grep -q "{project_name}"',
+                'APP_URL="flask2fly.fly.dev"': f'APP_URL="{project_name}.fly.dev"',
+                "Flask2Fly": project_name,
+                "flask2fly": project_name.lower(),
+            }
+            for old, new in replacements.items():
+                content = content.replace(old, new)
+            deploy_script.write_text(content, encoding='utf-8')
         except UnicodeDecodeError:
             print_status(f"Warning: Could not update {deploy_script} due to encoding issues")
 
 def initialize_modules(project_path: Path) -> None:
+    """Initialize local module directories."""
     modules_dir = project_path / "src" / "modules"
-    modules_dir.mkdir(parents=True, exist_ok=True)
-
     pages_dir = modules_dir / "pages"
     pages_dir.mkdir(parents=True, exist_ok=True)
 
     # Initialize pages as a local Git repository
     subprocess.run(["git", "init"], cwd=pages_dir, check=True)
     
+    # Create basic structure
+    for subdir in ["docs", "articles", "templates"]:
+        (pages_dir / subdir).mkdir(exist_ok=True)
+
+    # Create .gitignore
+    gitignore_content = """__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+env/
+venv/
+.idea/
+.vscode/
+"""
+    (pages_dir / ".gitignore").write_text(gitignore_content, encoding='utf-8')
+
     # Create README.md
     readme_content = f"""# Pages Module
 
@@ -248,24 +340,6 @@ To synchronize with a remote repository:
 """
     (pages_dir / "README.md").write_text(readme_content, encoding='utf-8')
 
-    # Create basic structure
-    (pages_dir / "docs").mkdir(exist_ok=True)
-    (pages_dir / "articles").mkdir(exist_ok=True)
-    (pages_dir / "templates").mkdir(exist_ok=True)
-
-    # Create .gitignore
-    gitignore_content = """__pycache__/
-*.py[cod]
-*$py.class
-.env
-.venv
-env/
-venv/
-.idea/
-.vscode/
-"""
-    (pages_dir / ".gitignore").write_text(gitignore_content, encoding='utf-8')
-
     # Initial commit
     subprocess.run(["git", "add", "."], cwd=pages_dir, check=True)
     subprocess.run(
@@ -276,6 +350,7 @@ venv/
     )
 
 def setup_virtual_environment(project_path: Path) -> None:
+    """Set up and configure the virtual environment."""
     venv_path = project_path / "venv"
     venv.create(venv_path, with_pip=True)
     
@@ -288,6 +363,7 @@ def setup_virtual_environment(project_path: Path) -> None:
     )
 
 def setup_git_hooks(project_path: Path) -> None:
+    """Set up Git hooks."""
     hooks_dir = project_path / ".git" / "hooks"
     hooks_dir.mkdir(parents=True, exist_ok=True)
     
@@ -298,6 +374,7 @@ def setup_git_hooks(project_path: Path) -> None:
     (hooks_dir / "pre-push").chmod(0o755)
 
 def initialize_project(project_path: Path) -> None:
+    """Initialize the project with Git and virtual environment."""
     subprocess.run(["git", "init"], cwd=project_path, check=True)
     
     env_file = project_path / ".env"
@@ -313,12 +390,11 @@ def initialize_project(project_path: Path) -> None:
     setup_git_hooks(project_path)
 
 def safe_remove_git_dir(path: Path) -> None:
-    """Safely remove a git directory on Windows by first removing read-only attributes."""
+    """Safely remove a git directory on Windows."""
     if not path.exists():
         return
 
     def on_rm_error(func, path, exc_info):
-        # Make the directory/file writable and try again
         try:
             os.chmod(path, stat.S_IWRITE)
             os.unlink(path)
@@ -326,48 +402,49 @@ def safe_remove_git_dir(path: Path) -> None:
             pass
 
     try:
-        # First try to clean the git repo to remove locks
+        # Clean the git repo first
         try:
             subprocess.run(["git", "clean", "-fd"], cwd=path, check=False, capture_output=True)
             subprocess.run(["git", "gc"], cwd=path, check=False, capture_output=True)
         except Exception:
             pass
 
-        # Try to remove the directory with error handler
+        # Try standard removal first
         shutil.rmtree(path, onerror=on_rm_error)
         
-        # If directory still exists, try force removal
+        # If directory still exists, try more aggressive cleanup
         if path.exists():
-            import stat
             for p in path.rglob('*'):
                 try:
                     p.chmod(stat.S_IWRITE)
                 except Exception:
                     pass
             shutil.rmtree(path, ignore_errors=True)
-            
-        # Final check and cleanup
+        
+        # Last resort: use system commands
         if path.exists():
-            # If all else fails, try using system commands
             try:
-                if os.name == 'nt':  # Windows
+                if os.name == 'nt':
                     subprocess.run(['rmdir', '/S', '/Q', str(path)], check=False, capture_output=True)
-                else:  # Unix-like
+                else:
                     subprocess.run(['rm', '-rf', str(path)], check=False, capture_output=True)
             except Exception:
                 pass
 
-        if path.exists():
-            print_status(f"Warning: Could not remove temporary directory {path}. You may want to remove it manually.")
     except Exception as e:
-        print_status(f"Warning: Could not remove temporary directory {path}. You may want to remove it manually.")
+        print_status(f"Warning: Could not fully clean up {path}. You may want to remove it manually.")
 
 def main() -> None:
+    """Main entry point for the setup script."""
+    logging.basicConfig(level=logging.DEBUG)
     if len(sys.argv) < 2:
         print_error("Project name is required")
     
     project_name = sys.argv[1]
     project_dir = Path(sys.argv[2] if len(sys.argv) > 2 else ".")
+    
+    print_status("Please provide a brief description of your project for theme generation:")
+    project_description = input("> ")
     
     print_status(f"Starting project setup for {project_name}")
     
@@ -377,7 +454,15 @@ def main() -> None:
     print_status("Cloning Flask2Fly template...")
     
     # Create temporary directory for cloning
-    temp_clone_path = project_dir / "temp_clone"
+    temp_clone_path = Path("..") / "temp_clone"
+    
+    # Clean up existing temp_clone directory if it exists
+    if temp_clone_path.exists():
+        try:
+            shutil.rmtree(temp_clone_path)
+        except Exception as e:
+            safe_remove_git_dir(temp_clone_path)
+    
     subprocess.run(["git", "clone", TEMPLATE_REPO, str(temp_clone_path)], check=True)
     
     # Move contents to actual project directory
@@ -399,9 +484,16 @@ def main() -> None:
     
     # Perform all updates
     rename_project_files(project_path, project_name)
+    update_python_files(project_path, project_name)
     update_configuration_files(project_path, project_name)
     initialize_modules(project_path)
     initialize_project(project_path)
+    
+    # Generate and apply theme
+    print_status("Generating custom theme and logo...")
+    colors, logo_content = generate_theme(project_name, project_description)
+    update_theme_files(project_path, colors, logo_content)
+    print_success("Theme and logo generated successfully!")
     
     print_success(f"Project '{project_name}' has been successfully created!")
     print_status("Next steps:")

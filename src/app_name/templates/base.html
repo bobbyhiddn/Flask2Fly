@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}{% endblock %} - Flask2Fly</title>
+    <meta name="description" content="{{ app_purpose }}">
+    <title>{% block title %}{% endblock %} - {{ app_name }}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     {% block head %}{% endblock %}
 </head>
@@ -11,8 +12,8 @@
     <nav class="main-nav">
         <div class="nav-content">
             <div class="navbar-brand d-flex align-items-center">
-                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="flask2fly logo" class="nav-logo">
-                <a href="{{ url_for('index') }}">{{ site_name }}</a>
+                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="{{ app_name }} logo" class="nav-logo">
+                <a href="{{ url_for('index') }}">{{ app_name }}</a>
             </div>
             <div class="nav-links">
                 {% block nav %}{% endblock %}
@@ -26,7 +27,7 @@
 
     <footer>
         <div class="footer-content">
-            <p>&copy; {{ now.year }} Flask2Fly. All rights reserved.</p>
+            <p>&copy; {{ now.year }} {{ app_name }}. All rights reserved.</p>
         </div>
     </footer>
 

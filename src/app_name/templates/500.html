@@ -5,7 +5,7 @@
 {% block content %}
 <div class="container error-page">
     <h1>500 - Server Error</h1>
-    <p>Something went wrong on our end. Please try again later.</p>
+    <p>Something went wrong on {{ app_name }}'s servers. Our team has been notified and we're working to fix it. Please try again later.</p>
     <a href="{{ url_for('index') }}" class="btn">Return Home</a>
 </div>
 {% endblock %}
