@@ -1,3 +1,4 @@
+# core.py for Flask2Fly template
 from flask import Flask, render_template, jsonify, send_from_directory
 from typing import Optional
 import datetime
@@ -11,6 +12,13 @@ class AppCore:
         self.app = Flask(__name__, 
                         static_folder=static_folder,
                         static_url_path='/static')
+        
+        # Add app name configuration - will be replaced during project generation
+        self.app_name = os.path.basename(os.path.dirname(os.path.abspath(__file__)))
+        self.app.config.update(
+            APP_NAME=self.app_name.title(),
+            APP_DESCRIPTION='A Flask-powered web application'
+        )
         
         # Configure logging
         logging.basicConfig(level=logging.DEBUG)
@@ -29,10 +37,38 @@ class AppCore:
     def setup_routes(self):
         """Configure application routes"""
         @self.app.context_processor
-        def inject_now():
+        def inject_globals():
+            """Make common variables available to all templates"""
             return {
                 'now': datetime.datetime.now(),
-                'site_name': 'Flask2Fly'
+                'site_name': self.app.config['APP_NAME'],
+                'app_name': self.app.config['APP_NAME'],
+                'app_description': self.app.config['APP_DESCRIPTION'],
+                'app_purpose': 'A modern Flask application framework',
+                'app_repo_url': 'https://github.com/yourusername/Flask2Fly',
+                'docs_url': 'https://github.com/yourusername/Flask2Fly/docs',
+                'key_features': [
+                    {
+                        'icon': '🚀',
+                        'title': 'Quick Setup',
+                        'description': 'Get your Flask application up and running in minutes with our streamlined setup process'
+                    },
+                    {
+                        'icon': '🔧',
+                        'title': 'Easy Configuration',
+                        'description': 'Simple configuration management with environment variables and YAML files'
+                    },
+                    {
+                        'icon': '🔄',
+                        'title': 'Auto Deployment',
+                        'description': 'Integrated CI/CD pipeline with GitHub Actions and Fly.io deployment'
+                    },
+                    {
+                        'icon': '📦',
+                        'title': 'Modular Design',
+                        'description': 'Extensible architecture with support for Git submodules and feature modules'
+                    }
+                ]
             }
 
         @self.app.route('/static/<path:filename>')
@@ -43,7 +79,8 @@ class AppCore:
         @self.app.route('/')
         def index():
             """Home page route handler"""
-            return render_template('index.html', title="Welcome to Flask2Fly")
+            return render_template('index.html', 
+                                title=f"Welcome to {self.app.config['APP_NAME']}")
 
         @self.app.route('/health')
         def health():
@@ -51,6 +88,7 @@ class AppCore:
             return jsonify({
                 'status': 'healthy',
                 'timestamp': datetime.datetime.now().isoformat(),
+                'app': self.app.config['APP_NAME'],
                 'env': os.getenv('FLASK_ENV', 'production')
             })
 

@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="{{ app_purpose }}">
-    <title>{% block title %}{% endblock %} - {{ app_name }}</title>
+    <meta name="description" content="{{ app_description }}">
+    <title>{% block title %}{{ title|default(app_name) }}{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     {% block head %}{% endblock %}
 </head>
@@ -27,7 +27,7 @@
 
     <footer>
         <div class="footer-content">
-            <p>&copy; {{ now.year }} {{ app_name }}. All rights reserved.</p>
+            <p>&copy; {{ now.year }} Flask2Fly. All rights reserved.</p>
         </div>
     </footer>
 

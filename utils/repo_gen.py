@@ -99,7 +99,7 @@ def generate_theme(project_name: str, project_description: str) -> tuple[dict, b
     try:
         # Generate color scheme
         color_response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[{
                 "role": "user",
                 "content": f'Create a modern color scheme for a web application named "{project_name}". Description: {project_description}. Return ONLY a JSON object with these colors in hex format: primary-color, secondary-color, background-color, text-color, text-primary'
@@ -126,7 +126,7 @@ def generate_theme(project_name: str, project_description: str) -> tuple[dict, b
         # Generate logo
         image_response = client.images.generate(
             model="dall-e-3",
-            prompt=f'Create a modern logo for "{project_name}". Description: {project_description}. Style: 2D, clean, professional. Use {colors["primary-color"]} as the main color. Make it suitable as a website logo. 2D, stylized image.',
+            prompt=f'Create a modern, minimalist logo for "{project_name}". Description: {project_description}. Style: 2D, clean, geometric, professional. NO text, just a simple icon that represents the project. Use {colors["primary-color"]} as the main color. Make it suitable as a website logo. 2D, stylized image.',
             size="1024x1024",
             n=1,
             response_format="url"
@@ -161,8 +161,77 @@ def update_theme_files(project_path: Path, colors: dict, logo_content: bytes) ->
             )
         css_path.write_text(css_content, encoding='utf-8')
 
-def update_configuration_files(project_path: Path, project_name: str) -> None:
+def generate_features(project_name: str, project_description: str, client: OpenAI) -> list:
+    """Generate customized features using GPT based on project description"""
+    try:
+        # Craft a prompt that will result in structured feature data
+        prompt = f"""Generate 4 key features for a web application named "{project_name}". Description: {project_description}
+Return ONLY a JSON array of exactly 4 features, where each feature has an 'icon' (single emoji), 'title' (2-3 words), and 'description' (10-15 words).
+Features should be specific to the project's purpose."""
+
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{
+                "role": "user",
+                "content": prompt
+            }],
+            response_format={ "type": "json_object" },
+            temperature=0.7,
+        )
+        
+        # Get the raw response
+        raw_content = response.choices[0].message.content
+        logging.debug(f"Raw GPT features response: {raw_content}")
+        
+        try:
+            features = json.loads(raw_content)
+            # If the response is wrapped in a JSON object, extract the features array
+            if isinstance(features, dict) and "features" in features:
+                features = features["features"]
+            if not isinstance(features, list) or len(features) != 4:
+                raise ValueError("Invalid features format")
+            
+            return features
+            
+        except (json.JSONDecodeError, ValueError) as e:
+            logging.error(f"Failed to parse GPT response: {e}")
+            logging.error(f"Raw response was: {raw_content}")
+            return get_fallback_features(project_name)
+            
+    except Exception as e:
+        logging.error(f"Error generating features: {e}")
+        return get_fallback_features(project_name)
+
+def get_fallback_features(project_name: str) -> list:
+    """Provide fallback features if GPT generation fails"""
+    return [
+        {
+            "icon": "🚀",
+            "title": "Quick Setup",
+            "description": f"Get your {project_name} application running in minutes"
+        },
+        {
+            "icon": "⚙️",
+            "title": "Easy Configuration",
+            "description": "Simple configuration management with environment variables"
+        },
+        {
+            "icon": "🔄",
+            "title": "Auto Deployment",
+            "description": "Integrated CI/CD pipeline with cloud deployment"
+        },
+        {
+            "icon": "📦",
+            "title": "Modular Design",
+            "description": "Extensible architecture with support for feature modules"
+        }
+    ]
+
+def update_configuration_files(project_path: Path, project_name: str, project_description: str, client: OpenAI) -> None:
     """Update various configuration files with the project name."""
+    features = generate_features(project_name, project_description, client)
+    
+    # Core configuration files to update
     files_to_update = {
         "fly.toml": (lambda c: re.sub(r'^app = .*$', f"app = '{project_name}'", c, flags=re.MULTILINE)),
         "docker-compose.yml": (lambda c: re.sub(r'^  [a-zA-Z0-9_-]*:', f"  {project_name}:", c, flags=re.MULTILINE)),
@@ -177,7 +246,6 @@ def update_configuration_files(project_path: Path, project_name: str) -> None:
             try:
                 content = file_path.read_text(encoding='utf-8')
                 updated_content = update_func(content)
-                # Additional replacements for any remaining Flask2Fly references
                 updated_content = updated_content.replace("Flask2Fly", project_name)
                 updated_content = updated_content.replace("flask2fly", project_name.lower())
                 updated_content = updated_content.replace("FLASK2FLY", project_name.upper())
@@ -185,100 +253,52 @@ def update_configuration_files(project_path: Path, project_name: str) -> None:
             except UnicodeDecodeError:
                 print_status(f"Warning: Could not update {filename} due to encoding issues")
 
-    # Update templates
-    template_dir = project_path / "src" / project_name / "templates"
-    if template_dir.exists():
-        for template in template_dir.glob("**/*.html"):  # Use ** to search subdirectories
-            try:
-                content = template.read_text(encoding='utf-8')
-                
-                # Replace all variants of the project name
-                replacements = {
-                    "Flask2Fly": project_name,
-                    "flask2fly": project_name.lower(),
-                    "FLASK2FLY": project_name.upper(),
-                    "flask2fly logo": f"{project_name.lower()} logo",
-                    "Flask2Fly Logo": f"{project_name} Logo",
-                    "Welcome to Flask2Fly": f"Welcome to {project_name}",
-                    "https://github.com/bobbyhiddn/Flask2Fly": f"https://github.com/yourusername/{project_name}",
-                }
-                
-                for old, new in replacements.items():
-                    content = content.replace(old, new)
-                
-                # Update meta tags and titles
-                content = re.sub(
-                    r'<meta\s+name="description"\s+content="[^"]*"',
-                    f'<meta name="description" content="{project_name} - A modern Flask application"',
-                    content
-                )
-                content = re.sub(
-                    r'<title>[^<]*</title>',
-                    f'<title>{project_name}</title>',
-                    content
-                )
-                
-                template.write_text(content, encoding='utf-8')
-            except UnicodeDecodeError:
-                print_status(f"Warning: Could not update {template} due to encoding issues")
-
-    # Update core.py
+    # Update core.py with features
     core_file = project_path / "src" / project_name / "core.py"
     if core_file.exists():
         try:
             content = core_file.read_text(encoding='utf-8')
-            replacements = {
-                "'site_name': 'Flask2Fly'": f"'site_name': '{project_name}'",
-                'title="Welcome to Flask2Fly"': f'title="Welcome to {project_name}"',
-                "- Flask2Fly": f"- {project_name}",
-                "Flask2Fly": project_name,
-                "flask2fly": project_name.lower(),
-            }
-            for old, new in replacements.items():
-                content = content.replace(old, new)
+            
+            # Create new context with features
+            features_json = json.dumps(features, indent=4, ensure_ascii=False)
+            context_str = f"""
+            return {{
+                'now': datetime.datetime.now(),
+                'site_name': '{project_name}',
+                'app_name': '{project_name}',
+                'app_description': '{project_description}',
+                'app_purpose': '{project_description}',
+                'app_repo_url': f'https://github.com/yourusername/{project_name}',
+                'docs_url': f'https://github.com/yourusername/{project_name}/docs',
+                'key_features': {features_json}
+            }}
+            """
+            
+            # Replace the return statement in inject_globals using a more robust pattern
+            pattern = r'return\s*{[^}]*}'
+            content = re.sub(pattern, context_str.strip(), content, flags=re.DOTALL)
+            
+            # Update other references
+            content = content.replace("Flask2Fly", project_name)
+            content = content.replace("flask2fly", project_name.lower())
+            
             core_file.write_text(content, encoding='utf-8')
         except UnicodeDecodeError:
             print_status(f"Warning: Could not update {core_file} due to encoding issues")
 
-    # Update workflow files
-    workflows_dir = project_path / ".github" / "workflows"
-    if workflows_dir.exists():
-        for workflow in workflows_dir.glob("*.yml"):
+    # Update templates and HTML files
+    template_dir = project_path / "src" / project_name / "templates"
+    if template_dir.exists():
+        for template in template_dir.glob("**/*.html"):
             try:
-                content = workflow.read_text(encoding='utf-8')
-                replacements = {
-                    "flyctl deploy --remote-only": f"flyctl deploy --remote-only --app {project_name}",
-                    "flyctl secrets set": f"flyctl secrets set --app {project_name}",
-                }
-                for old, new in replacements.items():
-                    content = content.replace(old, new)
-                
-                # Handle dev branch naming
-                if "branches: [main]" not in content:
-                    content = content.replace(
-                        f"--app {project_name}",
-                        f"--app dev-{project_name}"
-                    )
-                workflow.write_text(content, encoding='utf-8')
+                content = template.read_text(encoding='utf-8')
+                content = content.replace("Flask2Fly", project_name)
+                content = content.replace("flask2fly", project_name.lower())
+                content = content.replace("FLASK2FLY", project_name.upper())
+                content = content.replace("flask2fly logo", f"{project_name.lower()} logo")
+                template.write_text(content, encoding='utf-8')
             except UnicodeDecodeError:
-                print_status(f"Warning: Could not update {workflow} due to encoding issues")
-
-    # Update fly_deploy.sh
-    deploy_script = project_path / "utils" / "fly_deploy.sh"
-    if deploy_script.exists():
-        try:
-            content = deploy_script.read_text(encoding='utf-8')
-            replacements = {
-                'grep -q "Flask2Fly"': f'grep -q "{project_name}"',
-                'APP_URL="flask2fly.fly.dev"': f'APP_URL="{project_name}.fly.dev"',
-                "Flask2Fly": project_name,
-                "flask2fly": project_name.lower(),
-            }
-            for old, new in replacements.items():
-                content = content.replace(old, new)
-            deploy_script.write_text(content, encoding='utf-8')
-        except UnicodeDecodeError:
-            print_status(f"Warning: Could not update {deploy_script} due to encoding issues")
+                print_status(f"Warning: Could not update {template} due to encoding issues")
 
 def initialize_modules(project_path: Path) -> None:
     """Initialize local module directories."""
@@ -485,7 +505,14 @@ def main() -> None:
     # Perform all updates
     rename_project_files(project_path, project_name)
     update_python_files(project_path, project_name)
-    update_configuration_files(project_path, project_name)
+    
+    api_key = os.getenv('OPENAI_API_KEY')
+    if not api_key:
+        print_error("OPENAI_API_KEY environment variable is required for theme generation")
+    
+    client = OpenAI(api_key=api_key)
+    
+    update_configuration_files(project_path, project_name, project_description, client)
     initialize_modules(project_path)
     initialize_project(project_path)
     
