@@ -67,24 +67,22 @@ def rename_project_files(project_path: Path, project_name: str) -> None:
 
 def update_python_files(project_path: Path, project_name: str) -> None:
     """Update Python imports and references."""
-    # Update main.py specifically
-    main_py = project_path / "src" / "main.py"
-    if main_py.exists():
-        try:
-            content = main_py.read_text(encoding='utf-8')
-            content = content.replace("from app_name.core", f"from {project_name}.core")
-            main_py.write_text(content, encoding='utf-8')
-        except UnicodeDecodeError:
-            print_status(f"Warning: Could not update {main_py} due to encoding issues")
-
+    patterns = [
+        ("from app_name", f"from {project_name}"),
+        ("import app_name", f"import {project_name}"),
+    ]
+    
     # Update all Python files recursively
     for py_file in project_path.rglob("*.py"):
         try:
             content = py_file.read_text(encoding='utf-8')
-            content = re.sub(r'from app_name\.', f'from {project_name}.', content)
-            content = re.sub(r'import app_name\.', f'import {project_name}.', content)
-            content = content.replace("app_name", project_name)
-            py_file.write_text(content, encoding='utf-8')
+            updated = False
+            for old, new in patterns:
+                if old in content:
+                    content = content.replace(old, new)
+                    updated = True
+            if updated:
+                py_file.write_text(content, encoding='utf-8')
         except UnicodeDecodeError:
             print_status(f"Warning: Could not update {py_file} due to encoding issues")
 
@@ -99,7 +97,7 @@ def generate_theme(project_name: str, project_description: str) -> tuple[dict, b
     try:
         # Generate color scheme
         color_response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4",
             messages=[{
                 "role": "user",
                 "content": f'Create a modern color scheme for a web application named "{project_name}". Description: {project_description}. Return ONLY a JSON object with these colors in hex format: primary-color, secondary-color, background-color, text-color, text-primary'
@@ -166,8 +164,13 @@ def generate_features(project_name: str, project_description: str, client: OpenA
     try:
         # Craft a prompt that will result in structured feature data
         prompt = f"""Generate 4 key features for a web application named "{project_name}". Description: {project_description}
-Return ONLY a JSON array of exactly 4 features, where each feature has an 'icon' (single emoji), 'title' (2-3 words), and 'description' (10-15 words).
-Features should be specific to the project's purpose."""
+Return a JSON array containing exactly 4 feature objects. Return ONLY the array, with NO wrapper object. Example:
+[
+    {{"icon": "🌲", "title": "Feature One", "description": "Description one"}},
+    {{"icon": "⚡", "title": "Feature Two", "description": "Description two"}},
+    {{"icon": "🔧", "title": "Feature Three", "description": "Description three"}},
+    {{"icon": "📦", "title": "Feature Four", "description": "Description four"}}
+]"""
 
         response = client.chat.completions.create(
             model="gpt-4o",
@@ -175,32 +178,44 @@ Features should be specific to the project's purpose."""
                 "role": "user",
                 "content": prompt
             }],
-            response_format={ "type": "json_object" },
-            temperature=0.7,
+            temperature=0.7
         )
         
-        # Get the raw response
         raw_content = response.choices[0].message.content
         logging.debug(f"Raw GPT features response: {raw_content}")
         
         try:
-            features = json.loads(raw_content)
-            # If the response is wrapped in a JSON object, extract the features array
-            if isinstance(features, dict) and "features" in features:
-                features = features["features"]
+            # Clean the response if it has markdown code blocks
+            clean_content = raw_content.strip()
+            if clean_content.startswith('```'):
+                clean_content = clean_content.split('\n', 1)[1]
+                clean_content = clean_content.rsplit('\n', 1)[0]
+                if clean_content.startswith('json'):
+                    clean_content = clean_content[4:].strip()
+            
+            features = json.loads(clean_content)
+            
+            # Validate the response
             if not isinstance(features, list) or len(features) != 4:
-                raise ValueError("Invalid features format")
+                logging.error("Invalid features structure returned")
+                return get_fallback_features(project_name) if project_name == "Flask2Fly" else None
+            
+            # Validate each feature has required fields
+            for feature in features:
+                if not all(k in feature for k in ('icon', 'title', 'description')):
+                    logging.error("Missing required fields in feature")
+                    return get_fallback_features(project_name) if project_name == "Flask2Fly" else None
             
             return features
             
-        except (json.JSONDecodeError, ValueError) as e:
+        except json.JSONDecodeError as e:
             logging.error(f"Failed to parse GPT response: {e}")
             logging.error(f"Raw response was: {raw_content}")
-            return get_fallback_features(project_name)
+            return get_fallback_features(project_name) if project_name == "Flask2Fly" else None
             
     except Exception as e:
         logging.error(f"Error generating features: {e}")
-        return get_fallback_features(project_name)
+        return get_fallback_features(project_name) if project_name == "Flask2Fly" else None
 
 def get_fallback_features(project_name: str) -> list:
     """Provide fallback features if GPT generation fails"""
@@ -245,48 +260,67 @@ def update_configuration_files(project_path: Path, project_name: str, project_de
         if file_path.exists():
             try:
                 content = file_path.read_text(encoding='utf-8')
-                updated_content = update_func(content)
-                updated_content = updated_content.replace("Flask2Fly", project_name)
-                updated_content = updated_content.replace("flask2fly", project_name.lower())
-                updated_content = updated_content.replace("FLASK2FLY", project_name.upper())
-                file_path.write_text(updated_content, encoding='utf-8')
+                content = update_func(content)
+                file_path.write_text(content, encoding='utf-8')
             except UnicodeDecodeError:
                 print_status(f"Warning: Could not update {filename} due to encoding issues")
 
-    # Update core.py with features
+    # Update core.py with project-specific configuration
     core_file = project_path / "src" / project_name / "core.py"
     if core_file.exists():
         try:
             content = core_file.read_text(encoding='utf-8')
             
-            # Create new context with features
-            features_json = json.dumps(features, indent=4, ensure_ascii=False)
-            context_str = f"""
+            # Format features as a proper Python list with consistent indentation
+            features_str = "[\n                    "
+            for i, feature in enumerate(features):
+                features_str += "{\n"
+                features_str += f"                        'icon': '{feature['icon']}',\n"
+                features_str += f"                        'title': '{feature['title']}',\n"
+                features_str += f"                        'description': '{feature['description']}'\n"
+                features_str += "                    }"
+                if i < len(features) - 1:
+                    features_str += ","
+                features_str += "\n                    "
+            features_str = features_str.rstrip() + "\n                ]"
+            
+            # More precise pattern to match the inject_globals function
+            pattern = (
+                r'(@self\.app\.context_processor\s*?\n\s*?def inject_globals\(\):\s*?'
+                r'(?:"""[^"]*"""\s*?)?'  # Optional docstring
+                r'\s*?return\s*?{[^}]*?key_features\':\s*?\[[^\]]*?\][^}]*?})'
+            )
+
+            # Create the replacement function with proper indentation
+            replacement = f'''@self.app.context_processor
+        def inject_globals():
+            """Make common variables available to all templates"""
             return {{
                 'now': datetime.datetime.now(),
-                'site_name': '{project_name}',
-                'app_name': '{project_name}',
-                'app_description': '{project_description}',
+                'site_name': self.app.config['APP_NAME'],
+                'app_name': self.app.config['APP_NAME'],
+                'app_description': self.app.config['APP_DESCRIPTION'],
                 'app_purpose': '{project_description}',
-                'app_repo_url': f'https://github.com/yourusername/{project_name}',
-                'docs_url': f'https://github.com/yourusername/{project_name}/docs',
-                'key_features': {features_json}
-            }}
-            """
+                'app_repo_url': 'https://github.com/yourusername/{project_name}',
+                'docs_url': 'https://github.com/yourusername/{project_name}/docs',
+                'key_features': {features_str}
+            }}'''
             
-            # Replace the return statement in inject_globals using a more robust pattern
-            pattern = r'return\s*{[^}]*}'
-            content = re.sub(pattern, context_str.strip(), content, flags=re.DOTALL)
+            # Replace the function while preserving surrounding content
+            updated_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
             
-            # Update other references
-            content = content.replace("Flask2Fly", project_name)
-            content = content.replace("flask2fly", project_name.lower())
+            # Write the updated content back to the file
+            core_file.write_text(updated_content, encoding='utf-8')
             
-            core_file.write_text(content, encoding='utf-8')
-        except UnicodeDecodeError:
-            print_status(f"Warning: Could not update {core_file} due to encoding issues")
+        except Exception as e:
+            logging.error(f"Error updating core.py: {str(e)}")
+            print_status(f"Warning: Could not update core.py: {str(e)}")
 
     # Update templates and HTML files
+    update_template_files(project_path, project_name)
+
+def update_template_files(project_path: Path, project_name: str) -> None:
+    """Update HTML templates with the project name"""
     template_dir = project_path / "src" / project_name / "templates"
     if template_dir.exists():
         for template in template_dir.glob("**/*.html"):

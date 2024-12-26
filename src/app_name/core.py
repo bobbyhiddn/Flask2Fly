@@ -51,22 +51,22 @@ class AppCore:
                     {
                         'icon': '🚀',
                         'title': 'Quick Setup',
-                        'description': 'Get your Flask application up and running in minutes with our streamlined setup process'
+                        'description': 'Get your application running in minutes'
                     },
                     {
-                        'icon': '🔧',
+                        'icon': '⚙️',
                         'title': 'Easy Configuration',
-                        'description': 'Simple configuration management with environment variables and YAML files'
+                        'description': 'Simple configuration management with environment variables'
                     },
                     {
                         'icon': '🔄',
                         'title': 'Auto Deployment',
-                        'description': 'Integrated CI/CD pipeline with GitHub Actions and Fly.io deployment'
+                        'description': 'Integrated CI/CD pipeline with cloud deployment'
                     },
                     {
                         'icon': '📦',
                         'title': 'Modular Design',
-                        'description': 'Extensible architecture with support for Git submodules and feature modules'
+                        'description': 'Extensible architecture with support for feature modules'
                     }
                 ]
             }
