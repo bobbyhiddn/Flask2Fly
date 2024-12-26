@@ -1,5 +1,5 @@
 # core.py for Flask2Fly template
-from flask import Flask, render_template, jsonify, send_from_directory, request
+from flask import Flask, render_template, jsonify, send_from_directory
 from typing import Optional
 import datetime
 import logging
@@ -51,22 +51,22 @@ class AppCore:
                     {
                         'icon': '🚀',
                         'title': 'Quick Setup',
-                        'description': 'Get your Flask application up and running in minutes with our streamlined setup process'
+                        'description': 'Get your application running in minutes'
                     },
                     {
-                        'icon': '🔧',
+                        'icon': '⚙️',
                         'title': 'Easy Configuration',
-                        'description': 'Simple configuration management with environment variables and YAML files'
+                        'description': 'Simple configuration management with environment variables'
                     },
                     {
                         'icon': '🔄',
                         'title': 'Auto Deployment',
-                        'description': 'Integrated CI/CD pipeline with GitHub Actions and Fly.io deployment'
+                        'description': 'Integrated CI/CD pipeline with cloud deployment'
                     },
                     {
                         'icon': '📦',
                         'title': 'Modular Design',
-                        'description': 'Extensible architecture with support for Git submodules and feature modules'
+                        'description': 'Extensible architecture with support for feature modules'
                     }
                 ]
             }
@@ -91,19 +91,6 @@ class AppCore:
                 'app': self.app.config['APP_NAME'],
                 'env': os.getenv('FLASK_ENV', 'production')
             })
-
-        @self.app.route('/search')
-        def search():
-            """Search endpoint"""
-            query = request.args.get('q', '')
-            # TODO: Implement search functionality
-            return render_template('search.html', 
-                                title="Search Results",
-                                query=query,
-                                results=[])
-
-        # Make the search function available to templates
-        self.app.view_functions['search'] = search
 
         @self.app.errorhandler(404)
         def not_found_error(error):

@@ -1,13 +1,14 @@
 {% extends "base.html" %}
 
+{% block title %}Home{% endblock %}
+
 {% block content %}
-<div class="hero-section">
+<div class="hero">
     <div class="hero-content">
-        <img src="{{ url_for('static', filename='img/logo.png') }}" alt="{{ app_name }} Logo" class="hero-logo">
-        <h1>Welcome to {{ app_name }}</h1>
-        <p class="lead">{{ app_description }}</p>
+        <h1>Welcome to Flask2Fly</h1>
+        <p class="hero-subtitle">{{ app_purpose }}</p>
         <div class="hero-buttons">
-            <a href="{{ url_for('index') }}" class="btn btn-primary">Get Started</a>
+            <a href="{{ app_repo_url }}" class="btn btn-primary">Get Started</a>
             <a href="{{ docs_url }}" class="btn btn-secondary">Learn More</a>
         </div>
     </div>

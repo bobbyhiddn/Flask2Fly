@@ -1,89 +1,36 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="{{ site_description }}">
+    <meta name="description" content="{{ app_description }}">
     <title>{% block title %}{{ title|default(app_name) }}{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    {% block head %}{% endblock %}
 </head>
 <body>
     <nav class="main-nav">
         <div class="nav-content">
-            <div class="nav-brand">
-                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="{{ app_name }} logo">
+            <div class="navbar-brand d-flex align-items-center">
+                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="{{ app_name }} logo" class="nav-logo">
                 <a href="{{ url_for('index') }}">{{ app_name }}</a>
             </div>
-            
-            <button class="mobile-menu-toggle" onclick="toggleMenu()" aria-label="Toggle navigation menu">
-                <span></span>
-                <span></span>
-                <span></span>
-            </button>
-
-            <div class="nav-links" id="navLinks">
-                {% for category in categories %}
-                <a href="{{ url_for('category_view', category=category) }}">{{ category }}</a>
-                {% endfor %}
-                
-                <div class="search-container">
-                    <form action="{{ url_for('search') }}" method="get">
-                        <input type="search" name="q" class="search-input" placeholder="Search..." required>
-                        <button type="submit" class="search-button">Search</button>
-                    </form>
-                </div>
-                
-                <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
-                    <svg class="theme-toggle-dark" viewBox="0 0 24 24" width="20" height="20">
-                        <path fill="currentColor" d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-3.03 0-5.5-2.47-5.5-5.5 0-1.82.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/>
-                    </svg>
-                    <svg class="theme-toggle-light" viewBox="0 0 24 24" width="20" height="20">
-                        <path fill="currentColor" d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5z"/>
-                    </svg>
-                </button>
+            <div class="nav-links">
+                {% block nav %}{% endblock %}
             </div>
         </div>
     </nav>
 
-    <main>
+    <main class="content">
         {% block content %}{% endblock %}
     </main>
 
     <footer>
         <div class="footer-content">
-            <p>&copy; {{ current_year }} {{ app_name }}. All rights reserved.</p>
+            <p>&copy; {{ now.year }} Flask2Fly. All rights reserved.</p>
         </div>
     </footer>
 
-    <script>
-        function toggleMenu() {
-            const navLinks = document.getElementById('navLinks');
-            const mobileMenuToggle = document.querySelector('.mobile-menu-toggle');
-            
-            navLinks.classList.toggle('active');
-            mobileMenuToggle.classList.toggle('active');
-            document.body.classList.toggle('menu-open');
-        }
-
-        function getTheme() {
-            return localStorage.getItem('theme') || 'light';
-        }
-
-        function setTheme(theme) {
-            localStorage.setItem('theme', theme);
-            document.documentElement.setAttribute('data-theme', theme);
-        }
-
-        function toggleTheme() {
-            const currentTheme = getTheme();
-            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
-            setTheme(newTheme);
-        }
-
-        document.addEventListener('DOMContentLoaded', () => {
-            setTheme(getTheme());
-        });
-    </script>
+    {% block scripts %}{% endblock %}
 </body>
 </html>
