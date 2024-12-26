@@ -166,7 +166,7 @@ def generate_features(project_name: str, project_description: str, client: OpenA
     try:
         # Craft a prompt that will result in structured feature data
         prompt = f"""Generate 4 key features for a web application named "{project_name}". Description: {project_description}
-Return ONLY a JSON array of exactly 4 features, where each feature has an 'icon' (single emoji), 'title' (2-3 words), and 'description' (10-15 words).
+Return ONLY a JSON object with a 'features' key containing an array of exactly 4 features, where each feature has an 'icon' (single emoji), 'title' (2-3 words), and 'description' (10-15 words).
 Features should be specific to the project's purpose."""
 
         response = client.chat.completions.create(
@@ -190,6 +190,11 @@ Features should be specific to the project's purpose."""
                 features = features["features"]
             if not isinstance(features, list) or len(features) != 4:
                 raise ValueError("Invalid features format")
+            
+            # Validate each feature has required fields
+            for feature in features:
+                if not all(key in feature for key in ["icon", "title", "description"]):
+                    raise ValueError("Features missing required fields")
             
             return features
             
@@ -260,23 +265,60 @@ def update_configuration_files(project_path: Path, project_name: str, project_de
             content = core_file.read_text(encoding='utf-8')
             
             # Create new context with features
-            features_json = json.dumps(features, indent=4, ensure_ascii=False)
-            context_str = f"""
-            return {{
-                'now': datetime.datetime.now(),
-                'site_name': '{project_name}',
-                'app_name': '{project_name}',
-                'app_description': '{project_description}',
-                'app_purpose': '{project_description}',
-                'app_repo_url': f'https://github.com/yourusername/{project_name}',
-                'docs_url': f'https://github.com/yourusername/{project_name}/docs',
-                'key_features': {features_json}
-            }}
-            """
+            features_list = []
+            for feature in features:
+                features_list.append({
+                    "icon": feature["icon"],
+                    "title": feature["title"],
+                    "description": feature["description"]
+                })
             
-            # Replace the return statement in inject_globals using a more robust pattern
-            pattern = r'return\s*{[^}]*}'
-            content = re.sub(pattern, context_str.strip(), content, flags=re.DOTALL)
+            # Format the features JSON with proper indentation
+            features_lines = []
+            features_lines.append("[")
+            for i, feature in enumerate(features_list):
+                feature_json = json.dumps(feature, indent=4, ensure_ascii=False)
+                # Indent each line of the feature
+                feature_lines = feature_json.splitlines()
+                for j, line in enumerate(feature_lines):
+                    if j == 0:  # First line
+                        features_lines.append("                    " + line)
+                    else:
+                        features_lines.append("                        " + line.lstrip())
+                if i < len(features_list) - 1:
+                    features_lines[-1] += ","
+            features_lines.append("                ]")
+            features_json = "\n".join(features_lines)
+            
+            # Create a properly indented return statement
+            context_str = """            return {
+                'now': datetime.datetime.now(),
+                'site_name': '%s',
+                'app_name': '%s',
+                'app_description': '%s',
+                'app_purpose': '%s',
+                'app_repo_url': f'https://github.com/yourusername/%s',
+                'docs_url': f'https://github.com/yourusername/%s/docs',
+                'key_features': %s
+            }""" % (
+                project_name,
+                project_name,
+                project_description,
+                project_description,
+                project_name,
+                project_name,
+                features_json
+            )
+            
+            # Find the inject_globals function and replace its entire content
+            inject_pattern = r'def inject_globals\(\):[\s\S]*?return\s*{[\s\S]*?key_features[\s\S]*?\][\s\S]*?}'
+            
+            replacement = f"""def inject_globals():
+            \"\"\"Make common variables available to all templates\"\"\"
+{context_str}"""
+            
+            # Use re.sub with re.MULTILINE and re.DOTALL flags
+            content = re.sub(inject_pattern, replacement, content, flags=re.MULTILINE | re.DOTALL)
             
             # Update other references
             content = content.replace("Flask2Fly", project_name)
